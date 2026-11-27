@@ -75,17 +75,6 @@ export class AudioSystem {
         previous = (previous + (Math.random() * 2 - 1) * 0.12) / 1.025;
         samples[i] = previous * 3;
       }
-      const noise = ctx.createBufferSource();
-      noise.buffer = this.noiseBuffer;
-      noise.loop = true;
-      this.ambientFilter = ctx.createBiquadFilter();
-      this.ambientFilter.type = 'lowpass';
-      this.ambientFilter.frequency.value = 2400;
-      this.ambientGain = ctx.createGain();
-      this.ambientGain.gain.value = 0.075;
-      noise.connect(this.ambientFilter).connect(this.ambientGain).connect(this.master);
-      noise.start();
-      this.nodes.push(noise, this.ambientFilter, this.ambientGain);
 
       this.chargeOsc = ctx.createOscillator();
       this.chargeOsc.type = 'sine';
@@ -105,9 +94,6 @@ export class AudioSystem {
     this.era = era;
     this.ambientClock = 0;
     this.musicStep = 0;
-    if (!this.context) return;
-    const frequencies = { present: 2700, fifties: 1600, oldwest: 450, future: 750 };
-    this.ambientFilter.frequency.setTargetAtTime(frequencies[era] || 1600, this.context.currentTime, 0.4);
   }
 
   setMuted(muted) {
@@ -130,8 +116,6 @@ export class AudioSystem {
     this.engineFilter.frequency.setTargetAtTime(250 + speed * 12 + Math.abs(throttle) * 280, now, 0.12);
     this.chargeOsc.frequency.setTargetAtTime(150 + charge * charge * 1400 + Math.sin(this.time * 12) * charge * 35, now, 0.06);
     this.chargeGain.gain.setTargetAtTime(paused ? 0 : Math.max(0, charge) * 0.055, now, 0.08);
-    const ambientLevels = { present: 0.055, fifties: 0.008, oldwest: 0.026, future: 0.016 };
-    this.ambientGain.gain.setTargetAtTime(paused ? 0.005 : (ambientLevels[this.era] || 0.02) * (0.9 + 0.1 * Math.sin(this.time * 0.4)), now, 0.3);
     this.paused = paused;
     if (paused) return;
     if (walking) {

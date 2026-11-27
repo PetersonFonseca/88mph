@@ -4,7 +4,7 @@ import { StreetJourney } from '../src/street/journey.js';
 
 const MS_PER_MPH = 0.44704;
 const metadata = (epoch, s) => ({ panoId: epoch + '-' + s, date: epoch === 'present' ? '2024-11' : '2010-02' });
-function route({ gap = 75, portalS = 450, length = 900 } = {}) {
+function route({ gap = 75, portalS = 750, length = 1500 } = {}) {
   const positions = [...new Set([0, portalS, length,
     ...Array.from({ length: Math.floor(length / gap) + 1 }, (_, index) => index * gap)])].sort((a, b) => a - b);
   return {
@@ -42,7 +42,7 @@ async function drive(journey, until, limit = 5000) {
   }
   assert.ok(until(), 'Did not reach expected state: ' + JSON.stringify(journey.snapshot()));
 }
-const holdSpeedThrottle = speed => (0.2 + speed * 0.015 + speed ** 2 * 0.0003) / 3.1;
+const holdSpeedThrottle = speed => (0.2 + speed * 0.015 + speed ** 2 * 0.0003) / 2.0;
 
 test('start waits for three adjacent GPU-ready panoramas and never cascades beyond them', async () => {
   const pending = deferred();
@@ -64,7 +64,7 @@ test('start waits for three adjacent GPU-ready panoramas and never cascades beyo
 
 test('destination is armed only after the portal and three following images are ready', async () => {
   const pending = deferred();
-  const { journey, requests } = setup({ load: meta => meta.panoId === 'past-675' ? pending.promise : resource(meta) });
+  const { journey, requests } = setup({ load: meta => meta.panoId === 'past-975' ? pending.promise : resource(meta) });
   await journey.start();
   const preparing = journey.prepareDestination('past');
   await ticks();
@@ -74,8 +74,8 @@ test('destination is armed only after the portal and three following images are 
   assert.equal(journey.progress, 0.75);
   assert.equal(journey.beginTravel(), null);
   assert.deepEqual(requests.filter(item => item.meta.panoId.startsWith('past')).map(item => item.meta.panoId),
-    ['past-450', 'past-525', 'past-600', 'past-675']);
-  pending.resolve(resource(metadata('past', 675)));
+    ['past-750', 'past-825', 'past-900', 'past-975']);
+  pending.resolve(resource(metadata('past', 975)));
   await preparing;
   assert.equal(journey.snapshot().prepared, true);
   assert.equal(journey.snapshot().destinationAheadReady, 3);
@@ -97,7 +97,7 @@ test('failed startup warming releases every newly loaded resource', async () => 
 
 test('failed destination warming keeps the origin usable and never arms a partial destination', async () => {
   const { journey, resources } = setup({ load: meta => {
-    if (meta.panoId === 'past-600') throw new Error('Chegada incompleta.');
+    if (meta.panoId === 'past-900') throw new Error('Chegada incompleta.');
     return resource(meta);
   } });
   await journey.start();
@@ -119,13 +119,13 @@ test('travels only at the exact portal and source photo, at 88 mph', async () =>
   assert.equal(journey.canTravel(), false);
   assert.equal(journey.beginTravel(), null);
   await drive(journey, () => journey.status === 'departure');
-  assert.equal(journey.s, 450);
-  assert.equal(journey.current.metadata.panoId, 'present-450');
+  assert.equal(journey.s, 750);
+  assert.equal(journey.current.metadata.panoId, 'present-750');
   assert.equal(journey.speedMph, 88);
   assert.ok(Math.abs(journey.speedKmh - 141.622272) < 1e-9);
   assert.equal(journey.snapshot().movementPaused, true);
   assert.equal(Object.isFrozen(journey.travelSnapshot), true);
-  assert.ok(!requests.some(item => item.meta.panoId === 'present-525'));
+  assert.ok(!requests.some(item => item.meta.panoId === 'present-825'));
   journey.dispose();
 });
 
@@ -143,7 +143,7 @@ test('commit transfers the preview and warmed pool with no requests; arrival rem
   assert.equal(journey.current, preview);
   assert.deepEqual([...journey._ahead.values()].map(entry => entry.resource), preparedAfter);
   assert.equal(journey.epoch, 'past');
-  assert.equal(journey.s, 450);
+  assert.equal(journey.s, 750);
   assert.equal(journey.speedMph, 88);
   assert.equal(source.disposals, 0);
   assert.equal(journey.snapshot().movementPaused, true);
@@ -158,15 +158,15 @@ test('commit transfers the preview and warmed pool with no requests; arrival rem
 
 test('a late destination cannot let the car pass the portal', async () => {
   const pending = deferred();
-  const { journey } = setup({ lookaheadCount: 0, load: meta => meta.panoId === 'past-450' ? pending.promise : resource(meta) });
+  const { journey } = setup({ lookaheadCount: 0, load: meta => meta.panoId === 'past-750' ? pending.promise : resource(meta) });
   await journey.start();
   const preparing = journey.prepareDestination('past');
   await drive(journey, () => journey.needsRestart);
-  assert.equal(journey.s, 450);
+  assert.equal(journey.s, 750);
   assert.equal(journey.speedMph, 0);
   for (let i = 0; i < 20; i++) journey.update(0.1, { throttle: 1 });
-  assert.equal(journey.s, 450);
-  pending.resolve(resource(metadata('past', 450)));
+  assert.equal(journey.s, 750);
+  pending.resolve(resource(metadata('past', 750)));
   await preparing;
   assert.equal(journey.beginTravel(), null);
   await journey.restart();
@@ -200,10 +200,10 @@ test('buffering stops movement without falsifying the conserved physical velocit
 
 test('stale destination responses are released and cannot replace a newer preview', async () => {
   const pending = [deferred(), deferred()]; let request = 0;
-  const { journey } = setup({ lookaheadCount: 0, load: meta => meta.panoId === 'past-450' ? pending[request++].promise : resource(meta) });
+  const { journey } = setup({ lookaheadCount: 0, load: meta => meta.panoId === 'past-750' ? pending[request++].promise : resource(meta) });
   await journey.start();
   const first = journey.prepareDestination('past'), second = journey.prepareDestination('past');
-  const newer = resource(metadata('past', 450)), older = resource(metadata('past', 450));
+  const newer = resource(metadata('past', 750)), older = resource(metadata('past', 750));
   pending[1].resolve(newer); await second;
   pending[0].resolve(older); await first;
   assert.equal(journey.prepared, newer);
@@ -214,14 +214,14 @@ test('stale destination responses are released and cannot replace a newer previe
 
 test('restarting cancels destination warming and releases its portal and late pool entries', async () => {
   const pending = deferred();
-  const { journey, requests, resources } = setup({ load: meta => meta.panoId === 'past-525' ? pending.promise : resource(meta) });
+  const { journey, requests, resources } = setup({ load: meta => meta.panoId === 'past-825' ? pending.promise : resource(meta) });
   await journey.start();
   const preparing = journey.prepareDestination('past');
   await ticks();
-  const request = requests.find(item => item.meta.panoId === 'past-525');
+  const request = requests.find(item => item.meta.panoId === 'past-825');
   await journey.restart();
   assert.equal(request.options.signal.aborted, true);
-  const late = resource(metadata('past', 525));
+  const late = resource(metadata('past', 825));
   pending.resolve(late);
   await preparing;
   assert.equal(late.disposals, 1);
@@ -241,7 +241,7 @@ test('restart invalidates a captured travel and unready destinations are rejecte
   assert.equal(journey.commitTravel(oldSnapshot), false);
   assert.equal(journey.epoch, 'present');
   assert.equal(journey.s, 0);
-  const unready = { ...resource(metadata('past', 450)), ready: false };
+  const unready = { ...resource(metadata('past', 750)), ready: false };
   journey.loadPanorama = async () => unready;
   await assert.rejects(journey.prepareDestination('past'), /ainda não está pronto/);
   assert.equal(journey.snapshot().prepared, false);
@@ -312,7 +312,7 @@ test('six driving views and three arrival views stay bounded and commit without 
   journey.finishArrival();
   assert.equal(source.disposals, 1);
   assert.equal(requests.length, count + 3);
-  assert.deepEqual(requests.slice(count).map(item => item.meta.panoId), ['past-570', 'past-600', 'past-630']);
+  assert.deepEqual(requests.slice(count).map(item => item.meta.panoId), ['past-870', 'past-900', 'past-930']);
   await ticks();
   assert.equal(journey.snapshot().aheadReady, 6);
   assert.ok(resources.filter(item => !item.disposals).length <= 7);
@@ -381,20 +381,38 @@ test('constant velocity covers the same real distance at 4, 10, 20 and 60 FPS ac
   }
 });
 
-test('acceleration is measured in seconds/metres and reaches 100 km/h around eleven seconds', async () => {
+test('acceleration is measured in seconds/metres and reaches 100 km/h gradually, around nineteen seconds', async () => {
   const { journey } = setup({ track: route({ portalS: 1000, length: 2000 }) });
   await journey.start();
   await journey.prepareDestination('past');
   let seconds = 0, time100 = null;
-  while (journey.speedMph < 88 && seconds < 25) {
+  while (journey.speedMph < 88 && seconds < 45) {
     journey.update(1 / 120, { throttle: 1 });
     await ticks();
     seconds += 1 / 120;
     if (time100 === null && journey.speedKmh >= 100) time100 = seconds;
   }
-  assert.ok(time100 > 10 && time100 < 11.3, String(time100));
-  assert.ok(seconds > 15.5 && seconds < 17, String(seconds));
-  assert.ok(journey.s > 340 && journey.s < 350, String(journey.s));
+  assert.ok(time100 > 18 && time100 < 19.2, String(time100));
+  assert.ok(seconds > 30 && seconds < 32, String(seconds));
+  assert.ok(journey.s > 680 && journey.s < 710, String(journey.s));
+  journey.dispose();
+});
+
+test('full throttle is governed at exactly 88 mph and the jump happens at 88 mph', async () => {
+  const { journey } = setup({ track: route({ portalS: 1000, length: 2000 }) });
+  await journey.start();
+  await journey.prepareDestination('past');
+  let seconds = 0, topMph = 0;
+  while (journey.status === 'driving' && seconds < 60) {
+    journey.update(1 / 120, { throttle: 1 });
+    await ticks();
+    seconds += 1 / 120;
+    if (journey.status === 'driving') topMph = Math.max(topMph, journey.speedMph);
+  }
+  assert.equal(journey.status, 'departure');
+  assert.equal(topMph, 88);
+  assert.equal(journey.speedMph, 88);
+  assert.ok(Math.abs(journey.s - 1000) < 1e-6, String(journey.s));
   journey.dispose();
 });
 
@@ -437,7 +455,7 @@ test('repeated round trips release every resource exactly once', async () => {
     journey.commitTravel();
     journey.finishArrival();
     await drive(journey, () => journey.status === 'finished');
-    assert.equal(journey.s, 900);
+    assert.equal(journey.s, 1500);
     assert.equal(journey.speedMph, 0);
     await journey.restart();
   }

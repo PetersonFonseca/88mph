@@ -3,7 +3,9 @@ const TRAVEL_MPH = 88;
 const EPSILON = 0.001;
 const STEP_SECONDS = 1 / 120;
 const MAX_FRAME_SECONDS = 0.25;
-const ACCELERATION = 3.1;
+// Gentle enough to dose the throttle: ~31 s and ~700 m to 88 mph, still well
+// before the ~1 km portal.
+const ACCELERATION = 2.0;
 const BRAKING = 7.5;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -463,7 +465,10 @@ export class StreetJourney {
     while (remaining > 1e-9 && !this.movementPaused) {
       const step = Math.min(remaining, STEP_SECONDS), previous = this.speed;
       const drag = 0.2 + previous * 0.015 + previous ** 2 * 0.0003;
-      const capMph = !this._crossedPortal && !this.prepared?.ready ? 87 : 104;
+      // Before the portal the car is governed at exactly 88 mph once armed, so
+      // the jump always happens at 88.0 mph instead of whatever top speed the
+      // approach reached. Unarmed it stays just below, keeping the portal shut.
+      const capMph = this._crossedPortal ? 104 : this.prepared?.ready ? TRAVEL_MPH : TRAVEL_MPH - 1;
       this.speed = clamp(previous + (ACCELERATION * throttle - drag - BRAKING * brake) * step, 0, capMph * MPH_TO_MS);
       this._advanceDistance((previous + this.speed) * 0.5 * step);
       remaining -= step;

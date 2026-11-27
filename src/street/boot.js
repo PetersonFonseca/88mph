@@ -39,7 +39,6 @@ export async function bootStreet() {
     <section class="street-dashboard" id="street-dashboard" hidden>
       <div class="street-capture"><span>VOCÊ ESTÁ EM</span><strong id="active-capture">—</strong><small id="active-address">Avenida Paulista</small></div>
       <div class="street-route"><div><span id="route-stage">APROXIMAÇÃO</span><strong id="portal-distance">—</strong></div><div class="street-route-track"><i id="route-fill"></i><b id="portal-marker"></b></div><p id="driving-message" role="status">Prepare o destino antes de acelerar.</p></div>
-      <div class="street-speed"><strong id="street-speed">00</strong><span>km/h</span><small id="street-mph">0 mph · SALTO A 142 km/h</small><small id="street-armed">CIRCUITOS DESLIGADOS</small></div>
       <footer class="street-controls"><span><kbd>W</kbd> ACELERAR</span><span><kbd>S / ESPAÇO</kbd> FREAR</span><span><kbd>ARRASTE</kbd> OLHAR</span><span><kbd>T</kbd> DESTINO</span><button id="street-pause">PAUSAR <kbd>H</kbd></button><button id="street-mute">SOM ON</button></footer>
     </section>
     <section class="street-panel" id="street-panel" aria-labelledby="destination-title" hidden>
@@ -299,14 +298,10 @@ export async function bootStreet() {
       el['street-attribution'].hidden = false;
     }
     const remaining = Math.max(0, route.portalS - state.s);
-    el['street-speed'].textContent = state.buffering ? '—' : String(Math.round(state.speedMph * 1.609344)).padStart(2, '0');
-    el['street-mph'].textContent = state.buffering ? 'MOVIMENTO EM ESPERA' : `${Math.round(state.speedMph)} mph · SALTO A 142 km/h`;
     el['portal-distance'].textContent = state.s <= route.portalS ? `${Math.ceil(remaining)} m até o salto` : `${Math.ceil(route.length - state.s)} m até o fim`;
     el['route-stage'].textContent = state.s <= route.portalS ? 'APROXIMAÇÃO / MASP' : 'CHEGADA / PAULISTA';
     el['route-fill'].style.width = `${state.s / route.length * 100}%`;
     el['portal-marker'].style.left = `${route.portalS / route.length * 100}%`;
-    el['street-armed'].textContent = state.prepared ? 'DESTINO PRONTO' : state.preparing ? 'PREPARANDO DESTINO' : 'CIRCUITOS DESLIGADOS';
-    el['street-armed'].classList.toggle('armed', state.prepared);
     el['destination-status'].textContent = state.prepared ? 'Destino pronto · chegada carregada' : state.preparing ? 'Carregando e preparando a chegada…' : 'Escolha o destino e prepare a chegada.';
     const progress = typeof state.progress === 'number' ? state.progress : (state.progress?.total ? state.progress.loaded / state.progress.total : 0);
     el['destination-progress'].value = state.prepared ? 1 : progress || 0;
