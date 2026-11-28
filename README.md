@@ -127,3 +127,15 @@ O teste intercepta todas as chamadas ao Google e usa tiles de cores identificado
 O diagnóstico `window.__street.snapshot()` informa estado, preparação, posição, métricas e memória, sem expor a chave. A arquitetura está em `src/street/`: provider oficial, descoberta da rota, renderização panorâmica, controlador e interface. Referências: [Street View Tiles](https://developers.google.com/maps/documentation/tile/streetview) e [políticas de uso](https://developers.google.com/maps/documentation/tile/policies).
 
 O teste `test:street:local` usa um acervo temporário com imagens de validade HTTP vencida em 2020, reabre a viagem após recarregar a página e verifica ausência de chamadas ao Google. Também cobre percurso ausente, imagens incompletas e atualização somente por clique explícito. Resultados em `artifacts/street-local-browser/`.
+
+## Linha do tempo em vídeo (experimental)
+
+Ferramentas de linha de comando em `scripts/timeline/` preparam uma viagem em vídeo gerado por IA (MAGI-2 via API do Higgsfield): a aproximação no presente interpolada entre fotos reais e uma Avenida Paulista de 1955 recriada. O jogo ainda não usa esses vídeos; por ora há só o teste de visual.
+
+- **Credencial:** `HF_CREDENTIALS=id:segredo` no `.env` (chave de console.higgsfield.ai). Só os scripts Node a leem; ela nunca vai para o navegador, para o armazenamento de upload nem para a CDN de saída.
+- **Quadros-chave:** `node scripts/timeline/keyframes.mjs --at 843.6,portal --zoom 5` renderiza a vista frontal com o enquadramento da cabine (1920×1080, f = 960 px, ponto de fuga em 720, 600). O zoom 5 baixa só os blocos frontais (~52 por panorama, cota do Street View) para `.cache/timeline/tiles/`, separado do acervo do app; `--zoom 3` usa apenas o acervo; `--dry-run` conta os blocos.
+- **Conferência:** com `npm run dev` ativo, `node scripts/timeline/parity.mjs` compara um quadro renderizado com a tela do app (SSIM) sem consultar o Google.
+- **Geração:** `node scripts/timeline/generate.mjs plan` estima o custo de cada item pelo `/estimate` (grátis). `run --max-usd 6` executa em fila serial com teto obrigatório, para antes de qualquer envio se um item custar mais que o previsto e retoma de onde parou. `status`, `select I4` (escolhe a chegada em 1955) e `retry T2` completam o fluxo.
+- **Revisão:** `node scripts/timeline/review.mjs` gera prévias pelo para-brisa, folhas de contato, a posição estimada quadro a quadro e `artifacts/timeline-lookdev/index.html` (abra pelo servidor de desenvolvimento).
+
+Originais pagos e o histórico de gastos (`state.json`, `ledger.jsonl`) ficam em `.cache/timeline/paulista/`, nunca sobrescritos. O conteúdo deriva de imagens do Street View: mantenha-o local e revise os termos do Google Maps Platform antes de publicar qualquer resultado.
