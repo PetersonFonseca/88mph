@@ -54,12 +54,20 @@ export function normalizeMetadata(data) {
 // Metadata describes the native z=5 image. Lower levels halve that image, not
 // an assumed 16384px canvas: legacy 13312px panoramas have only 7 columns at z=3.
 // Cropping each edge tile also removes the unused pixels at z=0.
+// The oldest captures (2007, 3328px) stop at z=3: their metadata size is the
+// native image at that level, so a request above it is clamped to it.
 // https://developers.google.com/maps/documentation/tile/streetview
-export function getTileLayout(metadata, zoom = 3) {
-  if (!Number.isInteger(zoom) || zoom < 0 || zoom > MAX_ZOOM) throw new StreetViewError('Zoom do panorama inválido.', 'INVALID_TILE');
+export function nativeZoom(metadata) {
+  const columns = dimension(metadata.imageWidth) / dimension(metadata.tileWidth);
+  return Math.min(MAX_ZOOM, Math.max(0, Math.ceil(Math.log2(columns) - 1e-9)));
+}
+
+export function getTileLayout(metadata, requestedZoom = 3) {
+  if (!Number.isInteger(requestedZoom) || requestedZoom < 0 || requestedZoom > MAX_ZOOM) throw new StreetViewError('Zoom do panorama inválido.', 'INVALID_TILE');
   const imageWidth = dimension(metadata.imageWidth), imageHeight = dimension(metadata.imageHeight);
   const tileWidth = dimension(metadata.tileWidth), tileHeight = dimension(metadata.tileHeight);
-  const divisor = 2 ** (MAX_ZOOM - zoom);
+  const maxZoom = nativeZoom(metadata), zoom = Math.min(requestedZoom, maxZoom);
+  const divisor = 2 ** (maxZoom - zoom);
   const width = Math.max(1, Math.ceil(imageWidth / divisor));
   const height = Math.max(1, Math.ceil(imageHeight / divisor));
   const columns = Math.ceil(width / tileWidth), rows = Math.ceil(height / tileHeight);

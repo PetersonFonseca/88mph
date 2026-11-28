@@ -138,6 +138,15 @@ test('legacy 13312px tiles use the native pyramid and crop horizontal/vertical e
   assert.throws(() => getTileLayout({ ...metadata, imageWidth: 0 }, 3), { code: 'INVALID_METADATA' });
 });
 
+test('2007 3328px panoramas stop at native zoom three and use the whole 7×4 grid', () => {
+  const oldest = { ...metadata, imageWidth: 3328, imageHeight: 1664 };
+  const layout = getTileLayout(oldest, 3);
+  assert.deepEqual([layout.zoom, layout.width, layout.height, layout.columns, layout.rows], [3, 3328, 1664, 7, 4]);
+  assert.equal(layout.tiles.length, 28);
+  assert.equal(getTileLayout(oldest, 5).zoom, 3, 'requests above the native level are clamped');
+  assert.deepEqual([getTileLayout(oldest, 2).width, getTileLayout(oldest, 2).columns], [1664, 4]);
+});
+
 test('modern 16384px panorama keeps its full 8×4 zoom-three grid', () => {
   const modern = { ...metadata, imageWidth: 16384, imageHeight: 8192 };
   const layout = getTileLayout(modern, 3);
