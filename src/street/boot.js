@@ -408,7 +408,7 @@ export async function bootStreet() {
         }
         wasBuffering = state.buffering;
         const charge = state.prepared ? THREE.MathUtils.clamp((state.speedMph - 75) / 13, 0, 1) : 0;
-        cockpit.update(dt, time, {panel: false, look: {x: 0, y: 0}, speedMph: state.speedMph, circuits, night: false, charge});
+        cockpit.update(dt, time, {panel: false, look: {x: 0, y: 0}, head: {heading: lookHeading, pitch: lookPitch}, speedMph: state.speedMph, circuits, night: false, charge});
         audio.update(dt, {speedMph: state.speedMph, throttle: keys.has('KeyW') ? 1 : 0, charge, paused: paused || panel || state.movementPaused, surface: 'road'});
         if (before.epoch !== state.epoch) lastCapture = '';
       }

@@ -17,15 +17,19 @@ export class Cockpit {
     this.panelCanvas=canvas(MAP.panel.w,MAP.panel.h);this.panelTexture=new THREE.CanvasTexture(this.panelCanvas);this.panelTexture.colorSpace=THREE.SRGBColorSpace;this.makePlane(MAP.panel,this.panelTexture,2);
     this.speedCanvas=canvas(MAP.speed.w*2,MAP.speed.h*2);this.speedTexture=new THREE.CanvasTexture(this.speedCanvas);this.speedTexture.colorSpace=THREE.SRGBColorSpace;this.makePlane(MAP.speed,this.speedTexture,3);
     this.gaugeCanvas=canvas(GAUGES.w,GAUGES.h);this.gaugeTexture=new THREE.CanvasTexture(this.gaugeCanvas);this.gaugeTexture.colorSpace=THREE.SRGBColorSpace;this.gauges=this.makePlane(GAUGES,this.gaugeTexture,2);
-    this.roof=this.makePlane({x:-5000,y:-8000,w:5057,h:9000},null,0);this.roof.material.color.set(0x12171b);
-    this.bottom=this.makePlane({x:-5000,y:940,w:10000,h:4000},null,0);this.bottom.material.color.set(0x090b0d);
-    this.right=this.makePlane({x:1671,y:0,w:5000,h:4000},null,0);this.right.material.color.set(0x090b0d);
+    // The cockpit stays fixed to the car while the head turns: beyond the photograph
+    // the side windows stay open to the street and the doors are dark below them.
+    this.left=this.makePlane({x:-5000,y:215,w:5001,h:800},null,0);this.left.material.color.set(0x090b0d);
+    this.bottom=this.makePlane({x:-5000,y:940,w:11700,h:4000},null,0);this.bottom.material.color.set(0x090b0d);
+    this.right=this.makePlane({x:1671,y:150,w:5000,h:4000},null,0);this.right.material.color.set(0x090b0d);
     if(this.calibrate){ctx.strokeStyle='#00ffff';ctx.lineWidth=3;ctx.beginPath();MAP.windshield.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.stroke();Object.values(MAP).filter(v=>v?.w).forEach(r=>ctx.strokeRect(r.x,r.y,r.w,r.h));tex.needsUpdate=true;}
   }
   makePlane(r,texture,order){const distance=.12;const geometry=new THREE.PlaneGeometry(r.w/MAP.focal*distance,r.h/MAP.focal*distance);const material=new THREE.MeshBasicMaterial({map:texture,transparent:!!texture,depthTest:false,depthWrite:false,toneMapped:false});const mesh=new THREE.Mesh(geometry,material);mesh.layers.set(1);mesh.position.set((r.x+r.w/2-MAP.vx)/MAP.focal*distance,-(r.y+r.h/2-MAP.vy)/MAP.focal*distance,-distance);mesh.renderOrder=1000+order;mesh.frustumCulled=false;this.group.add(mesh);return mesh;}
   setVisible(visible){this.group.visible=visible;if(!visible){this.camera.clearViewOffset();this.camera.fov=62;this.camera.updateProjectionMatrix();}}
-  update(dt,t,{panel,look,speedMph,circuits,night,charge}){
+  update(dt,t,{panel,look,head,speedMph,circuits,night,charge}){
     if(!this.group.visible||!this.image)return;
+    // Undo the head rotation so the dashboard stays in the car's frame, not the eyes'.
+    this.group.rotation.set(-THREE.MathUtils.degToRad(head?.pitch||0),THREE.MathUtils.degToRad(head?.heading||0),0,'XYZ');
     this.zoom=THREE.MathUtils.damp(this.zoom,panel?1:0,6,dt);
     this.panX=clamp(this.panX-look.x*.12,-28,28);this.panY=clamp(this.panY-look.y*.1,-16,16);
     this.panX*=Math.exp(-dt*1.8);this.panY*=Math.exp(-dt*1.8);
