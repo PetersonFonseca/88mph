@@ -1,6 +1,7 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {mkdir, readFile, writeFile, rename, unlink} from 'node:fs/promises';
 import {normalizeSavedRoute} from '../src/street/savedRoute.js';
+import {LOCATIONS} from '../src/street/route.js';
 import {join} from 'node:path';
 import {createDiskTileCache, validTile} from './streetDiskCache.js';
 import {tileFreshness} from '../src/street/tileCache.js';
@@ -36,7 +37,8 @@ function sleep(ms, signal) {
 export function createStreetTileService({apiKey, directory, fetchImpl = globalThis.fetch, now = Date.now, requestTimeoutMs = 15000, quotaRetryDelays = QUOTA_RETRY_DELAYS, ...limits} = {}) {
   const cache = createDiskTileCache({apiKey, directory, now, ...limits});
   const routeDirectory = join(directory, createHash('sha256').update(apiKey).digest('hex'));
-  const routePath = join(routeDirectory, 'route.json');
+  // Paulista keeps the original file name so existing archives are adopted as-is.
+  const routePath = (location = 'paulista') => join(routeDirectory, location === 'paulista' ? 'route.json' : `route-${location}.json`);
   const pending = new Map(), controllers = new Set();
   let session, sessionPromise, disposed = false;
   const counts = {hits: 0, downloads: 0, stores: 0};
@@ -146,14 +148,19 @@ export function createStreetTileService({apiKey, directory, fetchImpl = globalTh
       try { const result = await waitWithSignal(entry.promise, signal); active(signal); return result; }
       finally { if (--entry.consumers === 0 && !entry.settled) entry.controller.abort(); }
     },
-    async readRoute() {
-      try { return normalizeSavedRoute(JSON.parse(await readFile(routePath, 'utf8'))); }
+    async readRoute(location = 'paulista') {
+      if (!Object.hasOwn(LOCATIONS, location)) throw failure('INVALID_LOCATION', 400);
+      try {
+        const route = normalizeSavedRoute(JSON.parse(await readFile(routePath(location), 'utf8')));
+        if (route.id !== location) throw new Error('mismatch');
+        return route;
+      }
       catch (error) { throw failure(error.code === 'ENOENT' ? 'LOCAL_ROUTE_MISSING' : 'INVALID_LOCAL_ROUTE', 404); }
     },
     async saveRoute(value) {
-      const route = normalizeSavedRoute(value), temporary = routePath + '.' + randomUUID() + '.tmp';
+      const route = normalizeSavedRoute(value), target = routePath(route.id), temporary = target + '.' + randomUUID() + '.tmp';
       await mkdir(routeDirectory, {recursive: true, mode: 0o700});
-      try { await writeFile(temporary, JSON.stringify(route), {mode: 0o600}); await rename(temporary, routePath); }
+      try { await writeFile(temporary, JSON.stringify(route), {mode: 0o600}); await rename(temporary, target); }
       finally { await unlink(temporary).catch(() => {}); }
       return {saved: true};
     },
@@ -190,7 +197,7 @@ export function createStreetCacheMiddleware(service, {now = Date.now} = {}) {
       if (url.pathname === '/__street-cache/status') return json(200, service ? await service.status() : {type: 'browser'});
       if (url.pathname === '/__street-cache/inventory' && service) return json(200, await service.inventory());
       if (url.pathname === '/__street-cache/route' && service) {
-        if (req.method === 'GET') return json(200, await service.readRoute());
+        if (req.method === 'GET') return json(200, await service.readRoute(url.searchParams.get('location') || 'paulista'));
         if (req.headers['content-type'] !== 'application/json') return json(415, {code: 'INVALID_REQUEST'});
         const chunks = []; let size = 0;
         for await (const chunk of req) {

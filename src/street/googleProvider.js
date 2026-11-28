@@ -261,9 +261,9 @@ export function createGoogleProvider({ apiKey, fetchImpl = globalThis.fetch, req
 
   return {
     detectPersistence,
-    async readLocalRoute({signal} = {}) {
+    async readLocalRoute({signal, location = 'paulista'} = {}) {
       if ((await detectPersistence({signal})).type !== 'disk') throw new StreetViewError('Abra o jogo pelo servidor local para acessar as imagens do computador.', 'LOCAL_STORAGE_UNAVAILABLE');
-      return localRequest('/route', {signal});
+      return localRequest(`/route?location=${encodeURIComponent(location)}`, {signal});
     },
     async saveLocalRoute(route, {signal} = {}) { return localRequest('/route', {signal, body: route}); },
     async localInventory({signal} = {}) { return localRequest('/inventory', {signal}); },

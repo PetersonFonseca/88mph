@@ -1,16 +1,17 @@
 import {normalizeMetadata} from './googleProvider.js';
+import {LOCATIONS} from './route.js';
 
 /** Validate and copy only route fields needed by the player; never store request URLs or tokens. */
 export function normalizeSavedRoute(value) {
   const invalid = () => { throw Object.assign(new Error('O percurso salvo está incompleto ou inválido.'), {code: 'INVALID_LOCAL_ROUTE', status: 400}); };
-  if (value?.id !== 'paulista' || !Number.isFinite(value.length) || value.length <= 0 || value.length > 10000 ||
+  if (!Object.hasOwn(LOCATIONS, value?.id ?? '') || !Number.isFinite(value.length) || value.length <= 0 || value.length > 10000 ||
       !Number.isFinite(value.portalS) || value.portalS <= 0 || value.portalS >= value.length || !Number.isFinite(value.heading)) invalid();
   const metadata = raw => {
     const result = normalizeMetadata(raw);
     if (!/^[A-Za-z0-9_-]{1,256}$/.test(result.panoId) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(result.date)) invalid();
     return {...result, links: []};
   };
-  const route = {id: 'paulista', name: 'Avenida Paulista · São Paulo', length: value.length, portalS: value.portalS, heading: value.heading, epochs: {}, portal: {}};
+  const route = {id: value.id, name: LOCATIONS[value.id].name, length: value.length, portalS: value.portalS, heading: value.heading, epochs: {}, portal: {}};
   for (const epoch of ['present', 'past']) {
     const raw = value.epochs?.[epoch]?.nodes;
     if (!Array.isArray(raw) || raw.length < 2 || raw.length > 2000) invalid();

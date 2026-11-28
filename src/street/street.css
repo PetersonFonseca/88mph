@@ -14,3 +14,9 @@
 .street-app .title-screen .primary{font:700 12px var(--mono)}
 
 .street-app .title-audio{margin-top:20px;font:10px var(--mono);letter-spacing:1px}
+.street-stops b{font-weight:inherit}
+/* The destination menu makes the title column taller: keep it clear of the footer on short screens. */
+@media(max-height:800px){.title-content{top:15%}.title-content h1{font-size:clamp(40px,4.6vw,66px);margin:16px 0 14px}.title-content .intro-copy{margin-bottom:18px}.title-audio{margin-top:12px}}
+@media(max-height:650px){.title-content{top:12%}.title-content .intro-copy{display:none}.place-menu legend{margin-bottom:8px}}
+@media(max-width:900px){.title-content{right:6.8vw}.place-menu{display:grid;grid-template-columns:1fr 1fr}.place-option span{min-width:0;width:auto;height:100%}}
+@media(max-width:600px){.title-content{left:16px;right:16px;top:12%}.title-footer{display:none}}

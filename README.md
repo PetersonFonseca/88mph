@@ -67,6 +67,17 @@ O carro e o cenário são estilizados. Celular/toque, missões, personagens, int
 
 Abra `http://127.0.0.1:5173/?mode=paulista` ou escolha **Avenida Paulista** na abertura. Esse modo usa a cabine existente e panoramas oficiais do Google, com movimento guiado na avenida. O modo clássico continua em `/`.
 
+### Destinos
+
+A tela inicial tem um menu **Escolha onde viajar** (a escolha fica salva no navegador; `?local=arleta` abre direto o segundo destino):
+
+| Destino | Portal | Percurso | Épocas |
+| --- | --- | --- | --- |
+| São Paulo · Avenida Paulista | nº 1508, perto do MASP | 1.914 m, portal após 1.004 m | fev/2010 ↔ 2021–2024 |
+| Los Angeles · Arleta | 9303 Roslyndale Ave | 662 m, portal após 583 m | jul/2007 ↔ 2024–2025 |
+
+Cada destino tem sementes, rua e limites próprios em `src/street/route.js` (`LOCATIONS`) e seu próprio percurso salvo (`route.json` para a Paulista, `route-<id>.json` para os demais), no mesmo acervo de imagens. A Roslyndale Ave termina na Garber St e na Sunburst St, então a aproximação tem menos de 600 m: nesse destino o carro acelera mais (88 mph em ~400 m, contra ~700 m na Paulista). Depois do salto, o carro desacelera sozinho (no máximo 10 m/s²) para parar no fim do percurso em vez de chegar a ele em alta velocidade. Em 28/11/2026, o download completo da Arleta somou **130 panoramas e 2.180 blocos (≈99 MB)**.
+
 ### Configuração
 
 1. No [Google Cloud](https://console.cloud.google.com/google/maps-apis/credentials), escolha o projeto, configure o faturamento e habilite **Map Tiles API**.

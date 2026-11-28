@@ -11,6 +11,8 @@ const HISTORICAL_SEEDS = Object.freeze([
 export const PAULISTA = Object.freeze({
   id: 'paulista',
   name: 'Avenida Paulista · São Paulo',
+  place: 'Avenida Paulista',
+  street: /paulista/i,
   heading: 315,
   targetEachSide: 1000,
   minimumBeforePortal: 400,
@@ -19,6 +21,7 @@ export const PAULISTA = Object.freeze({
   maxCrossDistance: 25,
   maxHeadingDifference: 45,
   maxTurn: 30,
+  acceleration: 2.0,
   recentCaptureWindowYears: 4,
   maxRequests: 1600,
   historicalSeeds: HISTORICAL_SEEDS,
@@ -27,6 +30,40 @@ export const PAULISTA = Object.freeze({
     past: HISTORICAL_SEEDS[0],
   }),
 });
+
+// Roslyndale Ave is a short residential street: it ends at Garber St (~590 m
+// before the house) and at Sunburst St (~90 m after). Seeds observed in the Maps UI on 28/11/2026.
+const ARLETA_HISTORICAL = Object.freeze([
+  Object.freeze({ panoId: 'wiVQ3FYdLQ7ViZwcqcZ0_A', date: '2007-07', lat: 34.23915365, lng: -118.43329741 }),
+  Object.freeze({ panoId: '8_lDnvEnBWR9LXJrRMevPA', date: '2011-08', lat: 34.23913383, lng: -118.43327646 }),
+  Object.freeze({ panoId: '3bKwhbxOOsIlCjxJFZvqpg', date: '2015-01', lat: 34.23914410, lng: -118.43330222 }),
+]);
+
+export const ARLETA = Object.freeze({
+  ...PAULISTA,
+  id: 'arleta',
+  name: 'Roslyndale Ave · Arleta, Los Angeles',
+  place: 'Roslyndale Ave',
+  street: /roslyndale/i,
+  heading: 139,
+  targetEachSide: 700,
+  minimumBeforePortal: 400,
+  minimumAfterPortal: 50,
+  // ~400 m to 88 mph instead of ~700 m: the whole approach is under 600 m.
+  acceleration: 2.8,
+  maxRequests: 600,
+  historicalSeeds: ARLETA_HISTORICAL,
+  seeds: Object.freeze({
+    present: Object.freeze({ panoId: 'd5RGBl8oiqo5wz4ai2_jgQ', date: '2024-08', lat: 34.23913438, lng: -118.43327709 }),
+    past: ARLETA_HISTORICAL[0],
+  }),
+});
+
+export const LOCATIONS = Object.freeze({ paulista: PAULISTA, arleta: ARLETA });
+
+export function locationFor(id) {
+  return LOCATIONS[id] ?? PAULISTA;
+}
 
 export class RouteCoverageError extends Error {
   constructor(message, code = 'ROUTE_COVERAGE') {
@@ -110,8 +147,8 @@ function allowedCapture(metadata, portal, epoch) {
   return Number(metadata.date.slice(0, 4)) >= Number(portal.date.slice(0, 4)) - PAULISTA.recentCaptureWindowYears;
 }
 
-function avenueLink(link) {
-  return !link.text?.trim() || /paulista/i.test(link.text);
+function avenueLink(link, street = PAULISTA.street) {
+  return !link.text?.trim() || street.test(link.text);
 }
 
 function projectOnPolyline(metadata, nodes) {
@@ -186,14 +223,14 @@ function locationAt(nodes, along) {
   return nodes.at(-1).metadata;
 }
 
-function validateAlignment(present, past, start, end) {
+function validateAlignment(present, past, start, end, place = PAULISTA.place) {
   const positions = [...new Set([start, end, ...present.map(node => node.along), ...past.map(node => node.along)])]
     .filter(along => along >= start && along <= end).sort((a, b) => a - b);
   let previous = null;
   for (const along of positions) {
     const pair = { present: locationAt(present, along), past: locationAt(past, along) };
     if (distanceMeters(pair.present, pair.past) > PAULISTA.maxCrossDistance) {
-      throw new RouteCoverageError('As imagens das duas épocas não cobrem a mesma faixa da Avenida Paulista.');
+      throw new RouteCoverageError(`As imagens das duas épocas não cobrem a mesma faixa da ${place}.`);
     }
     if (previous && along - previous.along > 1 && headingDifference(bearing(previous.pair.present, pair.present), bearing(previous.pair.past, pair.past)) > PAULISTA.maxHeadingDifference) {
       throw new RouteCoverageError('Os panoramas das duas épocas seguem direções incompatíveis neste trecho.');
@@ -203,7 +240,12 @@ function validateAlignment(present, past, start, end) {
 }
 
 /** Discover metadata through official panorama links; no images are downloaded. */
-export async function resolvePaulistaRoute(provider, { signal, onProgress = () => {}, historicalSeeds = PAULISTA.historicalSeeds } = {}) {
+export function resolvePaulistaRoute(provider, options = {}) {
+  return resolveRoute(provider, { location: PAULISTA, ...options });
+}
+
+export async function resolveRoute(provider, { location = PAULISTA, signal, onProgress = () => {}, historicalSeeds = location.historicalSeeds } = {}) {
+  const LOC = location;
   if (typeof provider?.getMetadata !== 'function') throw new TypeError('O provedor precisa implementar getMetadata.');
   if (!Array.isArray(historicalSeeds) || !historicalSeeds.length || historicalSeeds.some(seed => !seed?.panoId || typeof seed.date !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(seed.date) || !Number.isFinite(seed.lat) || !Number.isFinite(seed.lng))) {
     throw new TypeError('Informe ao menos uma captura histórica observada com ID, data e coordenadas.');
@@ -218,7 +260,7 @@ export async function resolvePaulistaRoute(provider, { signal, onProgress = () =
     if (fatalError) throw fatalError;
     const key = request.panoId || `location:${request.lat},${request.lng}:${request.radius ?? ''}`;
     if (!cache.has(key)) {
-      if (++requests > PAULISTA.maxRequests) throw new RouteCoverageError('A verificação do percurso excedeu o limite de consultas. Tente novamente.', 'REQUEST_LIMIT');
+      if (++requests > LOC.maxRequests) throw new RouteCoverageError('A verificação do percurso excedeu o limite de consultas. Tente novamente.', 'REQUEST_LIMIT');
       const pending = Promise.resolve().then(() => {
         abortIfNeeded(signal);
         if (fatalError) throw fatalError;
@@ -237,7 +279,7 @@ export async function resolvePaulistaRoute(provider, { signal, onProgress = () =
     return cache.get(key);
   }
 
-  async function resolveSeed(epoch, seed = PAULISTA.seeds[epoch]) {
+  async function resolveSeed(epoch, seed = LOC.seeds[epoch]) {
     let metadata;
     try {
       metadata = await read({ panoId: seed.panoId });
@@ -246,33 +288,33 @@ export async function resolvePaulistaRoute(provider, { signal, onProgress = () =
       if (!isMissingCapture(error)) throw error;
       if (epoch === 'past') throw new RouteCoverageError(`O panorama de ${seed.date.slice(0, 4)} não está disponível pela API oficial. Não é possível preparar a viagem histórica.`);
     }
-    if (epoch === 'present' && (!metadata || metadata.date !== seed.date || distanceMeters(seed, metadata) > PAULISTA.maxCrossDistance)) {
+    if (epoch === 'present' && (!metadata || metadata.date !== seed.date || distanceMeters(seed, metadata) > LOC.maxCrossDistance)) {
       // Location lookup is the documented refresh mechanism, not a date selector.
       try {
-        metadata = await read({ lat: seed.lat, lng: seed.lng, radius: PAULISTA.maxCrossDistance });
+        metadata = await read({ lat: seed.lat, lng: seed.lng, radius: LOC.maxCrossDistance });
       } catch (error) {
         abortIfNeeded(signal);
         if (!isMissingCapture(error)) throw error;
-        throw new RouteCoverageError('Não foi possível verificar uma captura atual neste ponto da Avenida Paulista.');
+        throw new RouteCoverageError(`Não foi possível verificar uma captura atual neste ponto da ${LOC.place}.`);
       }
-      if (metadata.date < seed.date) throw new RouteCoverageError('A captura atual disponível é anterior à referência de novembro de 2024.');
+      if (metadata.date < seed.date) throw new RouteCoverageError(`A captura atual disponível é anterior à referência de ${seed.date}.`);
     }
     if (epoch === 'past' && !isSameYear(metadata, seed.date)) {
       throw new RouteCoverageError(`O panorama histórico retornado não é de ${seed.date.slice(0, 4)}. A viagem foi interrompida para não exibir a época errada.`);
     }
-    if (distanceMeters(seed, metadata) > PAULISTA.maxCrossDistance) {
-      throw new RouteCoverageError('O panorama encontrado fica fora do ponto de viagem na Avenida Paulista.');
+    if (distanceMeters(seed, metadata) > LOC.maxCrossDistance) {
+      throw new RouteCoverageError(`O panorama encontrado fica fora do ponto de viagem na ${LOC.place}.`);
     }
     progress({ stage: 'portal', epoch, message: `Captura ${metadata.date} verificada.` });
     return metadata;
   }
 
-  progress({ stage: 'start', message: 'Verificando as capturas reais da Avenida Paulista…' });
+  progress({ stage: 'start', message: `Verificando as capturas reais da ${LOC.place}…` });
   const presentPortal = await resolveSeed('present');
 
   async function firstForwardHeading(portal, epoch) {
-    const candidates = portal.links.filter(link => avenueLink(link) && headingDifference(link.heading, PAULISTA.heading) <= PAULISTA.maxHeadingDifference)
-      .sort((a, b) => headingDifference(a.heading, PAULISTA.heading) - headingDifference(b.heading, PAULISTA.heading));
+    const candidates = portal.links.filter(link => avenueLink(link, LOC.street) && headingDifference(link.heading, LOC.heading) <= LOC.maxHeadingDifference)
+      .sort((a, b) => headingDifference(a.heading, LOC.heading) - headingDifference(b.heading, LOC.heading));
     for (const link of candidates) {
       if (link.panoId === portal.panoId) continue;
       let neighbor;
@@ -284,9 +326,9 @@ export async function resolvePaulistaRoute(provider, { signal, onProgress = () =
       }
       const gap = distanceMeters(portal, neighbor);
       const heading = bearing(portal, neighbor);
-      if (allowedCapture(neighbor, portal, epoch) && gap >= 1 && gap <= PAULISTA.maxGap + DISTANCE_EPSILON && headingDifference(heading, PAULISTA.heading) <= PAULISTA.maxHeadingDifference) return heading;
+      if (allowedCapture(neighbor, portal, epoch) && gap >= 1 && gap <= LOC.maxGap + DISTANCE_EPSILON && headingDifference(heading, LOC.heading) <= LOC.maxHeadingDifference) return heading;
     }
-    throw new RouteCoverageError(`Não há um próximo panorama válido da captura ${portal.date} na direção da Avenida Paulista.`);
+    throw new RouteCoverageError(`Não há um próximo panorama válido da captura ${portal.date} na direção da ${LOC.place}.`);
   }
 
   async function discover(epoch, portal, routeHeading) {
@@ -298,30 +340,30 @@ export async function resolvePaulistaRoute(provider, { signal, onProgress = () =
       function viable(metadata) {
         const gap = distanceMeters(current, metadata);
         const nextHeading = bearing(current, metadata);
-        return allowedCapture(metadata, portal, epoch) && gap >= 1 && gap <= PAULISTA.maxGap + DISTANCE_EPSILON &&
-          headingDifference(nextHeading, initialHeading) <= PAULISTA.maxHeadingDifference && headingDifference(nextHeading, heading) <= PAULISTA.maxTurn;
+        return allowedCapture(metadata, portal, epoch) && gap >= 1 && gap <= LOC.maxGap + DISTANCE_EPSILON &&
+          headingDifference(nextHeading, initialHeading) <= LOC.maxHeadingDifference && headingDifference(nextHeading, heading) <= LOC.maxTurn;
       }
       async function lookup(request) {
         try { return await read(request); }
         catch (error) { abortIfNeeded(signal); if (!isMissingCapture(error)) throw error; return null; }
       }
       async function crossIntersection(intersection) {
-        const links = intersection.links.filter(link => !visited.has(link.panoId) && /paulista/i.test(link.text ?? '') &&
-          headingDifference(link.heading, initialHeading) <= PAULISTA.maxHeadingDifference && headingDifference(link.heading, heading) <= PAULISTA.maxTurn)
+        const links = intersection.links.filter(link => !visited.has(link.panoId) && LOC.street.test(link.text ?? '') &&
+          headingDifference(link.heading, initialHeading) <= LOC.maxHeadingDifference && headingDifference(link.heading, heading) <= LOC.maxTurn)
           .sort((a, b) => headingDifference(a.heading, heading) - headingDifference(b.heading, heading));
         for (const link of links) {
           const metadata = await lookup({ panoId: link.panoId });
-          if (!metadata || visited.has(metadata.panoId) || !viable(metadata) || distanceMeters(intersection, metadata) > PAULISTA.maxGap) continue;
+          if (!metadata || visited.has(metadata.panoId) || !viable(metadata) || distanceMeters(intersection, metadata) > LOC.maxGap) continue;
           // A junction may name the transverse street. Skip its image only after
           // verifying that the next official link rejoins Paulista within one normal gap.
           return metadata;
         }
         return null;
       }
-      for (let step = 0; step < 300 && Math.abs(currentAlong) + DISTANCE_EPSILON < PAULISTA.targetEachSide; step++) {
+      for (let step = 0; step < 300 && Math.abs(currentAlong) + DISTANCE_EPSILON < LOC.targetEachSide; step++) {
         abortIfNeeded(signal);
-        const candidates = current.links.filter(link => !visited.has(link.panoId) && headingDifference(link.heading, initialHeading) <= PAULISTA.maxHeadingDifference && headingDifference(link.heading, heading) <= PAULISTA.maxTurn)
-          .sort((a, b) => Number(!avenueLink(a)) - Number(!avenueLink(b)) || headingDifference(a.heading, heading) - headingDifference(b.heading, heading));
+        const candidates = current.links.filter(link => !visited.has(link.panoId) && headingDifference(link.heading, initialHeading) <= LOC.maxHeadingDifference && headingDifference(link.heading, heading) <= LOC.maxTurn)
+          .sort((a, b) => Number(!avenueLink(a, LOC.street)) - Number(!avenueLink(b, LOC.street)) || headingDifference(a.heading, heading) - headingDifference(b.heading, heading));
         let next = null;
         for (const link of candidates) {
           let metadata;
@@ -334,14 +376,14 @@ export async function resolvePaulistaRoute(provider, { signal, onProgress = () =
           }
           if (metadata.panoId !== link.panoId && visited.has(metadata.panoId)) continue;
           if (!viable(metadata)) continue;
-          if (!avenueLink(link)) {
+          if (!avenueLink(link, LOC.street)) {
             metadata = await crossIntersection(metadata);
             if (!metadata) continue;
           }
           // A current location lookup can refresh an old bridge's links; it is not a date selector.
           if (epoch === 'present' && metadata.date < portal.date) {
             const refreshed = await lookup({ lat: metadata.lat, lng: metadata.lng, radius: 15 });
-            if (refreshed && !visited.has(refreshed.panoId) && refreshed.date >= metadata.date && distanceMeters(refreshed, metadata) <= PAULISTA.maxCrossDistance && viable(refreshed)) metadata = refreshed;
+            if (refreshed && !visited.has(refreshed.panoId) && refreshed.date >= metadata.date && distanceMeters(refreshed, metadata) <= LOC.maxCrossDistance && viable(refreshed)) metadata = refreshed;
           }
           next = { metadata, along: currentAlong + direction * distanceMeters(current, metadata) };
           break;
@@ -353,7 +395,7 @@ export async function resolvePaulistaRoute(provider, { signal, onProgress = () =
             const lat = current.lat + meters * Math.cos(heading * RAD) / EARTH_RADIUS / RAD;
             const lng = current.lng + meters * Math.sin(heading * RAD) / (EARTH_RADIUS * Math.cos(current.lat * RAD)) / RAD;
             const metadata = await lookup({ lat, lng, radius: 15 });
-            if (!metadata || visited.has(metadata.panoId) || !viable(metadata) || !metadata.links.some(link => /paulista/i.test(link.text ?? ''))) continue;
+            if (!metadata || visited.has(metadata.panoId) || !viable(metadata) || !metadata.links.some(link => LOC.street.test(link.text ?? ''))) continue;
             next = { metadata, along: currentAlong + direction * distanceMeters(current, metadata) };
             break;
           }
@@ -374,11 +416,11 @@ export async function resolvePaulistaRoute(provider, { signal, onProgress = () =
 
   async function attemptHistorical(seed) {
     const pastPortal = await resolveSeed('past', seed);
-    if (distanceMeters(presentPortal, pastPortal) > PAULISTA.maxCrossDistance) {
+    if (distanceMeters(presentPortal, pastPortal) > LOC.maxCrossDistance) {
       throw new RouteCoverageError('Os pontos de partida das duas épocas estão distantes demais para uma viagem no mesmo lugar.');
     }
     const [currentHeading, oldHeading] = await Promise.all([firstForwardHeading(presentPortal, 'present'), firstForwardHeading(pastPortal, 'past')]);
-    if (headingDifference(currentHeading, oldHeading) > PAULISTA.maxHeadingDifference) {
+    if (headingDifference(currentHeading, oldHeading) > LOC.maxHeadingDifference) {
       throw new RouteCoverageError('Os primeiros panoramas das duas épocas seguem ruas diferentes.');
     }
     const routeHeading = (Math.atan2(Math.sin(currentHeading * RAD) + Math.sin(oldHeading * RAD), Math.cos(currentHeading * RAD) + Math.cos(oldHeading * RAD)) / RAD + 360) % 360;
@@ -386,10 +428,10 @@ export async function resolvePaulistaRoute(provider, { signal, onProgress = () =
     const past = alignHistoricalNodes(present, historical);
     const start = Math.max(present[0].along, past[0].along);
     const end = Math.min(present.at(-1).along, past.at(-1).along);
-    if (-start + DISTANCE_EPSILON < PAULISTA.minimumBeforePortal || end + DISTANCE_EPSILON < PAULISTA.minimumAfterPortal) {
-      throw new RouteCoverageError(`Ainda não há cobertura contínua na mesma faixa nas duas épocas: são necessários ${PAULISTA.minimumBeforePortal} m antes e ${PAULISTA.minimumAfterPortal} m depois do portal.`);
+    if (-start + DISTANCE_EPSILON < LOC.minimumBeforePortal || end + DISTANCE_EPSILON < LOC.minimumAfterPortal) {
+      throw new RouteCoverageError(`Ainda não há cobertura contínua na mesma faixa nas duas épocas: são necessários ${LOC.minimumBeforePortal} m antes e ${LOC.minimumAfterPortal} m depois do portal.`);
     }
-    validateAlignment(present, past, start, end);
+    validateAlignment(present, past, start, end, LOC.place);
     const normalize = nodes => nodes.filter(node => node.along >= start - 0.001 && node.along <= end + 0.001)
       .map(node => {
         const index = nodes.indexOf(node);
@@ -397,7 +439,7 @@ export async function resolvePaulistaRoute(provider, { signal, onProgress = () =
         return { s: Math.max(0, Math.min(end - start, node.along - start)), heading: bearing(before.metadata, after.metadata), metadata: node.metadata };
       });
     return {
-      id: PAULISTA.id, name: PAULISTA.name, portalS: -start, length: end - start, heading: routeHeading,
+      id: LOC.id, name: LOC.name, portalS: -start, length: end - start, heading: routeHeading,
       epochs: { present: labelFor('present', normalize(present), presentPortal), past: labelFor('past', normalize(past), pastPortal) },
       portal: { present: presentPortal, past: pastPortal },
     };

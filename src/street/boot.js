@@ -4,7 +4,7 @@ import {TimeCircuits} from '../car/timeCircuits.js';
 import {AudioSystem} from '../core/audio.js';
 import {createGoogleProvider} from './googleProvider.js';
 import {PanoramaRenderer} from './panoramaRenderer.js';
-import {resolvePaulistaRoute, headingAt} from './route.js';
+import {resolveRoute, headingAt, LOCATIONS, locationFor} from './route.js';
 import {StreetJourney} from './journey.js';
 import {downloadRoute} from './downloadRoute.js';
 import {normalizeSavedRoute} from './savedRoute.js';
@@ -26,15 +26,42 @@ function safeReportLink(value) {
   catch { return '#'; }
 }
 
+// Text shown for each destination; the route data itself lives in route.js.
+const PLACES = {
+  paulista: {
+    footer: 'SÃO PAULO <span>PAULISTA</span>', footerNote: 'UMA AVENIDA. DOIS TEMPOS.', header: 'São Paulo / Avenida Paulista',
+    kicker: 'EXPEDIÇÃO 01 <i></i> 23°33′ S · 46°39′ O', title: 'A Paulista<br>tem memória.',
+    copy: 'A mesma avenida. Fotografias de outros tempos.<br>Prepare a chegada, entre na cabine e alcance 88 mph.',
+    past: '2010', recent: '2024*', note: '*Capturas observadas junto ao MASP. O modo local usa o percurso e as fotografias salvos no computador.',
+    heading: 'Uma avenida inteira de histórias.', summary: 'Um percurso ampliado pela Paulista.<br>O ponto de viagem fica perto do MASP.',
+    stops: ['Início da avenida', 'MASP / Paulista, 1508', 'Continue pela Paulista'], landmark: 'o MASP', address: 'Avenida Paulista',
+  },
+  arleta: {
+    footer: 'LOS ANGELES <span>ARLETA</span>', footerNote: 'UMA RUA. DOIS TEMPOS.', header: 'Los Angeles / Arleta · Roslyndale Ave',
+    kicker: 'EXPEDIÇÃO 02 <i></i> 34°14′ N · 118°26′ O', title: 'Roslyndale<br>tem memória.',
+    copy: 'Uma rua residencial do Vale de San Fernando.<br>Desça a Roslyndale Ave e alcance 88 mph diante do nº 9303.',
+    past: '2007', recent: '2024*', note: '*Capturas observadas diante do nº 9303. O modo local usa o percurso e as fotografias salvos no computador.',
+    heading: 'Uma rua curta, um salto preciso.', summary: 'Da Garber St até a casa: pouco menos de 600 m.<br>O motor foi ajustado para chegar a 88 mph a tempo.',
+    stops: ['Roslyndale Ave × Garber St', '9303 Roslyndale Ave', 'Até a Sunburst St'], landmark: 'o nº 9303', address: 'Roslyndale Ave · Arleta',
+  },
+};
+const PLACE_KEY = '88mph.place';
+function initialPlace() {
+  const fromUrl = new URLSearchParams(location.search).get('local');
+  if (Object.hasOwn(LOCATIONS, fromUrl ?? '')) return fromUrl;
+  try { const saved = localStorage.getItem(PLACE_KEY); if (Object.hasOwn(LOCATIONS, saved ?? '')) return saved; } catch { /* storage blocked */ }
+  return 'paulista';
+}
+
 export async function bootStreet() {
   const root = document.querySelector('#app');
   root.classList.add('street-app');
   root.innerHTML = `${streetTitle}
     <div class="street-backdrop" aria-hidden="true"></div>
-    <header class="street-header"><a class="street-brand" href="/">88<span>MPH</span></a><div class="street-place"><span>UMA RUA. DOIS TEMPOS.</span><strong>São Paulo / Avenida Paulista</strong></div></header>
+    <header class="street-header"><a class="street-brand" href="/">88<span>MPH</span></a><div class="street-place"><span>UMA RUA. DOIS TEMPOS.</span><strong id="street-place-name">São Paulo / Avenida Paulista</strong></div></header>
     <section class="street-setup" id="street-setup" hidden aria-labelledby="street-title">
-      <div class="street-intro"><p class="street-kicker">EXPEDIÇÃO 01 <i></i> 23°33′ S · 46°39′ O</p><h1 id="street-title">A Paulista<br>tem memória.</h1><p class="street-copy">A mesma avenida. Fotografias de outros tempos.<br>Prepare a chegada, entre na cabine e alcance 88 mph.</p><div class="street-years"><div><span>PASSADO</span><strong id="past-year">2010</strong></div><b>↔</b><div><span>CAPTURA RECENTE</span><strong id="recent-year">2024*</strong></div></div><p class="street-note" id="archive-note">*Capturas observadas junto ao MASP. O modo local usa o percurso e as fotografias salvos no computador.</p></div>
-      <div class="street-connect"><span class="street-kicker">SEU PERCURSO</span><h2>Uma avenida inteira de histórias.</h2><p id="route-summary">Um percurso ampliado pela Paulista.<br>O ponto de viagem fica perto do MASP.</p><ol class="street-stops"><li>Início da avenida <span>APROXIMAÇÃO</span></li><li class="portal-stop">MASP / Paulista, 1508 <span>SALTO TEMPORAL</span></li><li>Continue pela Paulista <span>CHEGADA</span></li></ol><div class="street-status" role="status" aria-live="polite"><i id="connection-dot"></i><span id="connection-status">Preparando a cabine…</span></div><progress id="connect-progress" aria-label="Preparação da viagem" hidden></progress><button id="connect-street" class="street-primary" >USAR ACERVO LOCAL <span>→</span></button><button id="update-street" class="street-secondary street-update">ATUALIZAR COM GOOGLE ↓</button><button id="cancel-download" class="street-secondary" hidden>CANCELAR PREPARAÇÃO</button><p class="street-small" id="download-detail">Modo local: sem consultas ao Google. Atualizar consulta o percurso e baixa apenas as imagens ausentes, consumindo a cota da API.</p><a class="street-cloud" id="street-cloud" href="https://console.cloud.google.com/google/maps-apis/credentials" target="_blank" rel="noopener">Configurar acesso no Google Maps ↗</a><p class="street-setup-error" id="setup-error" role="alert" hidden></p><p class="street-small">Imagens reais do Street View. As imagens salvas ficam no computador, sem exclusão automática por prazo ou tamanho. O acervo local não é atualizado automaticamente.</p></div>
+      <div class="street-intro"><p class="street-kicker" id="street-place-kicker">EXPEDIÇÃO 01 <i></i> 23°33′ S · 46°39′ O</p><h1 id="street-title">A Paulista<br>tem memória.</h1><p class="street-copy" id="street-place-copy">A mesma avenida. Fotografias de outros tempos.<br>Prepare a chegada, entre na cabine e alcance 88 mph.</p><div class="street-years"><div><span>PASSADO</span><strong id="past-year">2010</strong></div><b>↔</b><div><span>CAPTURA RECENTE</span><strong id="recent-year">2024*</strong></div></div><p class="street-note" id="archive-note">*Capturas observadas junto ao MASP. O modo local usa o percurso e as fotografias salvos no computador.</p></div>
+      <div class="street-connect"><span class="street-kicker">SEU PERCURSO</span><h2 id="street-route-heading">Uma avenida inteira de histórias.</h2><p id="route-summary">Um percurso ampliado pela Paulista.<br>O ponto de viagem fica perto do MASP.</p><ol class="street-stops"><li><b id="stop-0">Início da avenida</b> <span>APROXIMAÇÃO</span></li><li class="portal-stop"><b id="stop-1">MASP / Paulista, 1508</b> <span>SALTO TEMPORAL</span></li><li><b id="stop-2">Continue pela Paulista</b> <span>CHEGADA</span></li></ol><div class="street-status" role="status" aria-live="polite"><i id="connection-dot"></i><span id="connection-status">Preparando a cabine…</span></div><progress id="connect-progress" aria-label="Preparação da viagem" hidden></progress><button id="connect-street" class="street-primary" >USAR ACERVO LOCAL <span>→</span></button><button id="update-street" class="street-secondary street-update">ATUALIZAR COM GOOGLE ↓</button><button id="cancel-download" class="street-secondary" hidden>CANCELAR PREPARAÇÃO</button><p class="street-small" id="download-detail">Modo local: sem consultas ao Google. Atualizar consulta o percurso e baixa apenas as imagens ausentes, consumindo a cota da API.</p><a class="street-cloud" id="street-cloud" href="https://console.cloud.google.com/google/maps-apis/credentials" target="_blank" rel="noopener">Configurar acesso no Google Maps ↗</a><p class="street-setup-error" id="setup-error" role="alert" hidden></p><p class="street-small">Imagens reais do Street View. As imagens salvas ficam no computador, sem exclusão automática por prazo ou tamanho. O acervo local não é atualizado automaticamente.</p></div>
     </section>
     <section class="street-dashboard" id="street-dashboard" hidden>
       <div class="street-capture"><span>VOCÊ ESTÁ EM</span><strong id="active-capture">—</strong><small id="active-address">Avenida Paulista</small></div>
@@ -55,6 +82,22 @@ export async function bootStreet() {
     <div id="street-flash" class="street-flash" aria-hidden="true"></div><div id="street-jump" class="street-jump" hidden><span>ATRAVESSANDO O TEMPO</span><strong id="street-jump-date"></strong></div>
     <footer class="street-attribution" id="street-attribution" hidden><span class="google-credit">Google Maps</span><span id="street-copyright"></span><span id="street-image-date"></span><a id="street-report" target="_blank" rel="noopener">Reportar problema com esta imagem</a><a href="https://maps.google.com/help/terms_maps/" target="_blank" rel="noopener">Termos</a><a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Privacidade</a></footer>`;
   const el = Object.fromEntries([...root.querySelectorAll('[id]')].map(node => [node.id, node]));
+  let placeId = initialPlace(), place = locationFor(placeId);
+  function selectPlace(id) {
+    placeId = Object.hasOwn(LOCATIONS, id) ? id : 'paulista';
+    place = locationFor(placeId);
+    const text = PLACES[placeId];
+    try { localStorage.setItem(PLACE_KEY, placeId); } catch { /* storage blocked */ }
+    for (const input of root.querySelectorAll('input[name="place"]')) input.checked = input.value === placeId;
+    el['title-place'].innerHTML = text.footer; el['title-past'].textContent = text.past; el['title-note'].textContent = text.footerNote;
+    el['street-place-name'].textContent = text.header; el['street-place-kicker'].innerHTML = text.kicker;
+    el['street-title'].innerHTML = text.title; el['street-place-copy'].innerHTML = text.copy;
+    el['past-year'].textContent = text.past; el['recent-year'].textContent = text.recent; el['archive-note'].textContent = text.note;
+    el['street-route-heading'].textContent = text.heading; el['route-summary'].innerHTML = text.summary;
+    text.stops.forEach((stop, index) => { el[`stop-${index}`].textContent = stop; });
+    el['active-address'].textContent = text.address;
+    renderer.domElement.setAttribute('aria-label', `Panorama fotográfico: ${place.place}`);
+  }
   const renderer = new THREE.WebGLRenderer({antialias: true, powerPreference: 'high-performance'});
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   renderer.setSize(innerWidth, innerHeight);
@@ -63,6 +106,8 @@ export async function bootStreet() {
   renderer.domElement.id = 'street-canvas';
   renderer.domElement.setAttribute('aria-label', 'Panorama fotográfico da Avenida Paulista');
   root.prepend(renderer.domElement);
+  selectPlace(placeId);
+  for (const input of root.querySelectorAll('input[name="place"]')) input.addEventListener('change', () => { if (input.checked) selectPlace(input.value); });
   const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, .055, 1000);
   camera.position.set(0, 1.2, 0);
   camera.rotation.order = 'YXZ';
@@ -154,12 +199,12 @@ export async function bootStreet() {
         // requests and may pick other panoramas, wasting tiles already on disk.
         route = null;
         if (persistence.type === 'disk' && !rediscover) {
-          try { route = normalizeSavedRoute(await provider.readLocalRoute({signal: connectAbort.signal})); }
+          try { route = normalizeSavedRoute(await provider.readLocalRoute({signal: connectAbort.signal, location: placeId})); if (route.id !== placeId) route = null; }
           catch (error) { if (connectAbort.signal.aborted) throw error; }
         }
         if (route) el['connection-status'].textContent = 'Percurso salvo encontrado. Baixando apenas as imagens que faltam…';
         else {
-          route = await resolvePaulistaRoute(provider, {signal: connectAbort.signal, onProgress: progress => {
+          route = await resolveRoute(provider, {location: place, signal: connectAbort.signal, onProgress: progress => {
             el['connection-status'].textContent = progress.message || `Verificando o acervo · ${progress.loaded || 0} pontos`;
           }});
           // Save before downloading: a quota failure must not lose the route again.
@@ -170,9 +215,9 @@ export async function bootStreet() {
           const inventory = await provider.localInventory({signal: connectAbort.signal});
           el['download-detail'].textContent = `${inventory.entries} blocos de imagem preservados no disco · ${(inventory.bytes / 1048576).toFixed(1).replace('.', ',')} MB. Sem consultas ao Google.`;
         }
-        route = normalizeSavedRoute(await provider.readLocalRoute({signal: connectAbort.signal}));
+        route = normalizeSavedRoute(await provider.readLocalRoute({signal: connectAbort.signal, location: placeId}));
       }
-      el['route-summary'].textContent = `${(route.length / 1000).toFixed(2).replace('.', ',')} km verificados · ${Math.round(route.portalS)} m de aproximação até o MASP.`;
+      el['route-summary'].textContent = `${(route.length / 1000).toFixed(2).replace('.', ',')} km verificados · ${Math.round(route.portalS)} m de aproximação até ${PLACES[placeId].landmark}.`;
       el['archive-note'].textContent = `Capturas recentes: ${captureLabel(route.epochs.present.dateRange.from)} a ${captureLabel(route.epochs.present.dateRange.to)}. A data de cada fotografia aparece durante a viagem.`;
       el['connect-progress'].max = 1; el['connect-progress'].value = 0;
       let lastDownloadUpdate = 0;
@@ -192,11 +237,11 @@ export async function bootStreet() {
         el['download-detail'].dataset.reusedBytes = String(reused);
         el['download-detail'].dataset.googleBytes = String(received);
       }});
-      journey = new StreetJourney({route, lookaheadCount: 6, destinationLookaheadCount: 3,
+      journey = new StreetJourney({route, acceleration: place.acceleration, lookaheadCount: 6, destinationLookaheadCount: 3,
         loadPanorama: (metadata, options) => panoramas.prepare(metadata, provider, options)});
       const preparingJourney = journey;
       connectAbort.signal.addEventListener('abort', () => preparingJourney.dispose(), {once: true});
-      el['connection-status'].textContent = 'Imagens prontas. Preparando a avenida para dirigir…';
+      el['connection-status'].textContent = `Imagens prontas. Preparando a ${placeId === 'arleta' ? 'rua' : 'avenida'} para dirigir…`;
       await journey.start('present');
       if (connectAbort.signal.aborted) throw new DOMException('Preparação cancelada.', 'AbortError');
       circuits.now = circuitDate(journey.current.metadata.date); circuits.last = {...circuits.now};
@@ -299,7 +344,7 @@ export async function bootStreet() {
     }
     const remaining = Math.max(0, route.portalS - state.s);
     el['portal-distance'].textContent = state.s <= route.portalS ? `${Math.ceil(remaining)} m até o salto` : `${Math.ceil(route.length - state.s)} m até o fim`;
-    el['route-stage'].textContent = state.s <= route.portalS ? 'APROXIMAÇÃO / MASP' : 'CHEGADA / PAULISTA';
+    el['route-stage'].textContent = state.s <= route.portalS ? (placeId === 'arleta' ? 'APROXIMAÇÃO / 9303' : 'APROXIMAÇÃO / MASP') : (placeId === 'arleta' ? 'CHEGADA / ROSLYNDALE' : 'CHEGADA / PAULISTA');
     el['route-fill'].style.width = `${state.s / route.length * 100}%`;
     el['portal-marker'].style.left = `${route.portalS / route.length * 100}%`;
     el['destination-status'].textContent = state.prepared ? 'Destino pronto · chegada carregada' : state.preparing ? 'Carregando e preparando a chegada…' : 'Escolha o destino e prepare a chegada.';
@@ -320,7 +365,7 @@ export async function bootStreet() {
     el['driving-message'].textContent = state.error || (state.buffering ? 'Preparando a próxima imagem. Movimento em espera.' : state.needsRestart ? 'Sem velocidade suficiente no portal. Inicie uma nova aproximação.' : state.preparing ? 'Destino em preparação. O portal permanecerá fechado.' : state.prepared ? 'Alcance 142 km/h (88 mph) ao passar pelo ponto de viagem.' : 'T abre os circuitos com o carro parado.');
     if ((state.ended || state.status === 'finished' || state.needsRestart || state.status === 'error') && !paused && !panel) {
       setPaused(true);
-      el['street-pause-title'].textContent = state.ended || state.status === 'finished' ? 'Uma avenida. Outra história.' : 'Vamos preparar outra partida.';
+      el['street-pause-title'].textContent = state.ended || state.status === 'finished' ? (placeId === 'arleta' ? 'Uma rua. Outra história.' : 'Uma avenida. Outra história.') : 'Vamos preparar outra partida.';
       el['street-pause-copy'].textContent = state.error || 'Uma nova aproximação permite viajar para a outra época.';
     }
   }

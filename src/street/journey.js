@@ -7,6 +7,9 @@ const MAX_FRAME_SECONDS = 0.25;
 // before the ~1 km portal.
 const ACCELERATION = 2.0;
 const BRAKING = 7.5;
+// After the jump the car eases to a stop at the end of the route instead of
+// hitting it at speed; short streets (Arleta: ~80 m after the portal) need this.
+const END_BRAKING = 10;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 function progressValue(value) {
@@ -18,7 +21,9 @@ function progressValue(value) {
 
 /** Guided metres/second physics and bounded, GPU-ready panorama ownership. */
 export class StreetJourney {
-  constructor({ route, loadPanorama, onChange = () => {}, lookaheadCount = 3, destinationLookaheadCount = lookaheadCount }) {
+  constructor({ route, loadPanorama, onChange = () => {}, lookaheadCount = 3, destinationLookaheadCount = lookaheadCount, acceleration = ACCELERATION }) {
+    // Short streets need a stronger engine to reach 88 mph before the portal.
+    this.acceleration = Number.isFinite(acceleration) && acceleration > 0 ? acceleration : ACCELERATION;
     if (!route?.epochs || !route.portal || typeof loadPanorama !== 'function') {
       throw new Error('Percurso ou carregador de panoramas inválido.');
     }
@@ -469,7 +474,8 @@ export class StreetJourney {
       // the jump always happens at 88.0 mph instead of whatever top speed the
       // approach reached. Unarmed it stays just below, keeping the portal shut.
       const capMph = this._crossedPortal ? 104 : this.prepared?.ready ? TRAVEL_MPH : TRAVEL_MPH - 1;
-      this.speed = clamp(previous + (ACCELERATION * throttle - drag - BRAKING * brake) * step, 0, capMph * MPH_TO_MS);
+      this.speed = clamp(previous + (this.acceleration * throttle - drag - BRAKING * brake) * step, 0, capMph * MPH_TO_MS);
+      if (this._crossedPortal) this.speed = Math.min(this.speed, Math.sqrt(2 * END_BRAKING * Math.max(0, this.route.length - this.s)));
       this._advanceDistance((previous + this.speed) * 0.5 * step);
       remaining -= step;
     }

@@ -286,6 +286,28 @@ test('saved route survives server restart, and bad writes cannot replace it', as
   assert.deepEqual(await second.readRoute(), saved);
 });
 
+test('each destination keeps its own saved route without touching the Paulista file', async t => {
+  const env = await setup(t);
+  const meta = {...metadata, date: '2007-07', lat: 34.239, lng: -118.433, heading: 139, copyright: 'test'};
+  const route = id => {
+    const value = {id, length: 660, portalS: 580, heading: 139, epochs: {}, portal: {}};
+    for (const epoch of ['present', 'past']) {
+      value.portal[epoch] = meta;
+      value.epochs[epoch] = {nodes: [0, 580, 660].map(s => ({s, heading: 139, metadata: meta}))};
+    }
+    return value;
+  };
+  const service = createStreetTileService(env.config);
+  t.after(() => service.dispose());
+  const middleware = createStreetCacheMiddleware(service);
+  assert.equal((await invoke(middleware, '/__street-cache/route', {method: 'PUT', body: JSON.stringify(route('arleta'))})).status, 200);
+  await assert.rejects(service.readRoute(), {code: 'LOCAL_ROUTE_MISSING'});
+  assert.equal((await invoke(middleware, '/__street-cache/route?location=arleta')).status, 200);
+  assert.equal((await service.readRoute('arleta')).name, 'Roslyndale Ave · Arleta, Los Angeles');
+  await assert.rejects(service.readRoute('../route'), {code: 'INVALID_LOCATION'});
+  await assert.rejects(service.saveRoute(route('narnia')), {code: 'INVALID_LOCAL_ROUTE'});
+});
+
 test('legacy originals and later versions are never overwritten or removed on a repair', async t => {
   const env = await setup(t);
   await env.cache.put(tile, image(), headers());

@@ -495,3 +495,40 @@ test('disposing while the initial pool warms also releases the not-yet-activated
   assert.equal(journey.current, null);
   assert.ok(resources.every(item => item.disposals === 1));
 });
+
+test('a stronger engine reaches cruising speed sooner on short streets', async () => {
+  async function distanceTo(mph, acceleration) {
+    const journey = new StreetJourney({ route: route({ portalS: 1400, length: 1500 }), loadPanorama: async meta => resource(meta), acceleration });
+    await journey.start();
+    await drive(journey, () => journey.speed >= mph * MS_PER_MPH);
+    const s = journey.s;
+    journey.dispose();
+    return s;
+  }
+  // Unarmed the car is capped just below 88 mph, so compare at 85 mph.
+  const standard = await distanceTo(85, 2.0), arleta = await distanceTo(85, 2.8);
+  assert.ok(standard > 550, `standard ${standard}`);
+  assert.ok(arleta < 400, `arleta ${arleta}`);
+  assert.equal(new StreetJourney({ route: route(), loadPanorama: async m => resource(m), acceleration: -1 }).acceleration, 2.0);
+});
+
+test('after the jump a short street eases to a stop at its end instead of hitting it at 88 mph', async () => {
+  const { journey } = setup({ track: route({ gap: 20, portalS: 750, length: 830 }) });
+  await journey.start();
+  await journey.prepareDestination('past');
+  await drive(journey, () => journey.status === 'departure');
+  assert.equal(journey.commitTravel(journey.travelSnapshot), true);
+  journey.finishArrival();
+  let previous = journey.speed, steps = 0, hardest = 0;
+  while (journey.status !== 'finished' && steps++ < 6000) {
+    journey.update(1 / 120, { throttle: 1 });
+    await ticks();
+    if (journey.movementPaused) continue;
+    if (journey.status !== 'finished' && journey.speed > 2) hardest = Math.max(hardest, (previous - journey.speed) * 120);
+    previous = journey.speed;
+  }
+  assert.ok(hardest < 12, `braking peaked at ${hardest} m/s²`);
+  assert.equal(journey.status, 'finished');
+  assert.ok(previous < 2, `ends almost stopped, not at ${previous} m/s`);
+  journey.dispose();
+});

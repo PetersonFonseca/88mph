@@ -344,3 +344,12 @@ test('a broken recent link can rejoin the avenue through a nearby official locat
   assert.ok(recent.every((node, i) => !i || distanceMeters(recent[i - 1].metadata, node.metadata) < 60.01));
   assert.ok(route.epochs.past.nodes.every(node => node.metadata.date.startsWith('2010')));
 });
+
+test('Arleta is a known destination with its own seeds and a short-street engine', async () => {
+  const { ARLETA, LOCATIONS, locationFor } = await import('../src/street/route.js');
+  assert.equal(LOCATIONS.arleta, ARLETA);
+  assert.equal(locationFor('nowhere'), PAULISTA);
+  assert.equal(ARLETA.seeds.past.date, '2007-07');
+  assert.ok(ARLETA.street.test('Roslyndale Ave') && !ARLETA.street.test('Garber St'));
+  assert.ok(ARLETA.acceleration > PAULISTA.acceleration);
+});
